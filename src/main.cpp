@@ -20,6 +20,16 @@ constexpr int iconResource = 101;
 
 enum MenuItem { toggleEnabled = 1, toggleStartup, exitApp };
 
+constexpr COLORREF menuNavy = RGB(24, 34, 56);
+constexpr COLORREF menuOutline = RGB(49, 65, 94);
+constexpr COLORREF menuText = RGB(244, 247, 255);
+constexpr COLORREF menuTeal = RGB(110, 231, 220);
+
+void fillMenuRect(HDC dc, const RECT& rect, COLORREF color) {
+    SetDCBrushColor(dc, color);
+    FillRect(dc, &rect, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+}
+
 template <typename T> struct ComRelease {
     void operator()(T* value) const { value->Release(); }
 };
@@ -241,23 +251,147 @@ private:
         }
     }
 
+    UINT trackMenu(HMENU menu, POINT fallback) const {
+        NOTIFYICONIDENTIFIER identifier{};
+        identifier.cbSize = sizeof(identifier);
+        identifier.hWnd = window_;
+        identifier.uID = iconResource;
+
+        TPMPARAMS params{};
+        params.cbSize = sizeof(params);
+        RECT& icon = params.rcExclude;
+        if (FAILED(Shell_NotifyIconGetRect(&identifier, &icon))) {
+            icon = {fallback.x, fallback.y, fallback.x + 1, fallback.y + 1};
+        }
+
+        UINT flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_VERTICAL;
+        POINT anchor{icon.left, icon.bottom};
+        MONITORINFO monitor{};
+        monitor.cbSize = sizeof(monitor);
+        if (GetMonitorInfoW(MonitorFromRect(&icon, MONITOR_DEFAULTTONEAREST), &monitor)) {
+            const RECT& work = monitor.rcWork;
+            if (work.right - icon.right < icon.left - work.left) {
+                anchor.x = icon.right;
+                flags |= TPM_RIGHTALIGN;
+            }
+            if (work.bottom - icon.bottom < icon.top - work.top) {
+                anchor.y = icon.top;
+                flags |= TPM_BOTTOMALIGN;
+            }
+        }
+        return TrackPopupMenuEx(menu, flags, anchor.x, anchor.y, window_, &params);
+    }
+
+    int menuPixels(int pixels) const {
+        return MulDiv(pixels, static_cast<int>(menuDpi_), 96);
+    }
+
+    void measureMenuItem(MEASUREITEMSTRUCT& item) const {
+        const auto label = reinterpret_cast<const wchar_t*>(item.itemData);
+        if (!label) {
+            item.itemWidth = 0;
+            item.itemHeight = menuPixels(9);
+            return;
+        }
+        HDC dc = GetDC(window_);
+        const auto previousFont = SelectObject(dc, menuFont_);
+        SIZE text{};
+        GetTextExtentPoint32W(dc, label, lstrlenW(label), &text);
+        SelectObject(dc, previousFont);
+        ReleaseDC(window_, dc);
+        item.itemWidth = text.cx + menuPixels(46);
+        item.itemHeight = text.cy + menuPixels(12);
+    }
+
+    void drawMenuItem(const DRAWITEMSTRUCT& item) const {
+        HDC dc = item.hDC;
+        const RECT& row = item.rcItem;
+        const bool selected = (item.itemState & ODS_SELECTED) != 0;
+        fillMenuRect(dc, row, selected ? menuOutline : menuNavy);
+
+        const auto label = reinterpret_cast<const wchar_t*>(item.itemData);
+        const LONG center = row.top + (row.bottom - row.top) / 2;
+        if (!label) {
+            const RECT divider{row.left + menuPixels(10), center,
+                               row.right - menuPixels(10), center + menuPixels(1)};
+            fillMenuRect(dc, divider, menuOutline);
+            return;
+        }
+
+        if (item.itemState & ODS_CHECKED) {
+            const LONG x = row.left + menuPixels(10);
+            const POINT check[] = {{x, center}, {x + menuPixels(4), center + menuPixels(4)},
+                                   {x + menuPixels(11), center - menuPixels(4)}};
+            const HPEN pen = CreatePen(PS_SOLID, menuPixels(2), menuTeal);
+            const auto previousPen = SelectObject(dc, pen);
+            Polyline(dc, check, ARRAYSIZE(check));
+            SelectObject(dc, previousPen);
+            DeleteObject(pen);
+        }
+
+        RECT text = row;
+        text.left += menuPixels(32);
+        const auto previousFont = SelectObject(dc, menuFont_);
+        const int previousMode = SetBkMode(dc, TRANSPARENT);
+        const COLORREF previousColor = SetTextColor(dc, selected ? menuTeal : menuText);
+        DrawTextW(dc, label, -1, &text, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+        SetTextColor(dc, previousColor);
+        SetBkMode(dc, previousMode);
+        SelectObject(dc, previousFont);
+    }
+
     void showMenu(POINT position) {
+        if (menuOpen_) {
+            return;
+        }
         HMENU menu = CreatePopupMenu();
         if (!menu) {
             return;
         }
-        AppendMenuW(menu, MF_STRING | (enabled_ ? MF_CHECKED : MF_UNCHECKED),
-                    toggleEnabled, L"Mute when Windows locks");
-        AppendMenuW(menu, MF_STRING | (startsWithWindows() ? MF_CHECKED : MF_UNCHECKED),
-                    toggleStartup, L"Launch with Windows");
-        AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(menu, MF_STRING, exitApp, L"Exit");
 
+        // Use the system menu palette when Windows High Contrast is enabled.
+        HIGHCONTRASTW contrast{};
+        contrast.cbSize = sizeof(contrast);
+        SystemParametersInfoW(SPI_GETHIGHCONTRAST, sizeof(contrast), &contrast, 0);
+        menuDpi_ = GetDpiForWindow(window_);
+        NONCLIENTMETRICSW metrics{};
+        metrics.cbSize = sizeof(metrics);
+        if (!(contrast.dwFlags & HCF_HIGHCONTRASTON) && menuDpi_ &&
+            SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics),
+                                       &metrics, 0, menuDpi_)) {
+            menuFont_ = CreateFontIndirectW(&metrics.lfMenuFont);
+        }
+        HBRUSH background = nullptr;
+        if (menuFont_) {
+            background = CreateSolidBrush(menuNavy);
+            MENUINFO info{};
+            info.cbSize = sizeof(info);
+            info.fMask = MIM_BACKGROUND;
+            info.hbrBack = background;
+            SetMenuInfo(menu, &info);
+        }
+
+        const UINT style = menuFont_ ? MF_OWNERDRAW : MF_STRING;
+        AppendMenuW(menu, style | (enabled_ ? MF_CHECKED : MF_UNCHECKED),
+                    toggleEnabled, L"Mute when Windows locks");
+        AppendMenuW(menu, style | (startsWithWindows() ? MF_CHECKED : MF_UNCHECKED),
+                    toggleStartup, L"Launch with Windows");
+        AppendMenuW(menu, menuFont_ ? MF_OWNERDRAW | MF_DISABLED : MF_SEPARATOR, 0, nullptr);
+        AppendMenuW(menu, style, exitApp, L"Exit");
+
+        menuOpen_ = true;
         SetForegroundWindow(window_);
-        const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
-                                            position.x, position.y, 0, window_, nullptr);
+        const UINT command = trackMenu(menu, position);
+        menuOpen_ = false;
         PostMessageW(window_, WM_NULL, 0, 0);
         DestroyMenu(menu);
+        if (background) {
+            DeleteObject(background);
+        }
+        if (menuFont_) {
+            DeleteObject(menuFont_);
+            menuFont_ = nullptr;
+        }
 
         switch (command) {
         case toggleEnabled:
@@ -289,6 +423,22 @@ private:
             return 0;
         }
         switch (message) {
+        case WM_MEASUREITEM: {
+            auto& item = *reinterpret_cast<MEASUREITEMSTRUCT*>(lParam);
+            if (item.CtlType == ODT_MENU && menuFont_) {
+                measureMenuItem(item);
+                return TRUE;
+            }
+            break;
+        }
+        case WM_DRAWITEM: {
+            const auto& item = *reinterpret_cast<const DRAWITEMSTRUCT*>(lParam);
+            if (item.CtlType == ODT_MENU && menuFont_) {
+                drawMenuItem(item);
+                return TRUE;
+            }
+            break;
+        }
         case trayMessage: {
             const auto event = LOWORD(lParam);
             if (trayVersion4_) {
@@ -346,7 +496,10 @@ private:
     HINSTANCE instance_;
     HWND window_ = nullptr;
     HICON icon_ = nullptr;
+    HFONT menuFont_ = nullptr;
+    UINT menuDpi_ = 96;
     UINT taskbarCreated_ = 0;
+    bool menuOpen_ = false;
     bool trayVersion4_ = false;
     bool enabled_ = readEnabled();
     bool locked_ = false;

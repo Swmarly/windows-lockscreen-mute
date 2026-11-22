@@ -1,0 +1,62 @@
+name: Publish Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'New release tag (for example, v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate release branch and tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Run this workflow from main."
+            exit 1
+          fi
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Enter a version tag such as v1.0.0."
+            exit 1
+          fi
+
+  build:
+    needs: validate
+    uses: ./.github/workflows/build.yml
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-lockscreen-mute-x64
+          path: release
+      - name: Publish release with Windows executable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          existing_tag=$(git ls-remote --tags origin "refs/tags/$TAG")
+          if [[ -n "$existing_tag" ]]; then
+            echo "::error::This tag already exists. Enter a new version tag."
+            exit 1
+          fi
+          test -s release/windows-lockscreen-mute.exe
+          gh release create "$TAG" release/windows-lockscreen-mute.exe \
+            --target "$GITHUB_SHA" --title "$TAG" --generate-notes --latest

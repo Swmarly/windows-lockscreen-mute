@@ -8,6 +8,11 @@
   <h1>windows-lockscreen-mute</h1>
   <p>A small Windows tray utility that silences audio while your session is locked.</p>
   <p>
+    <a href="https://github.com/Swmarly/windows-lockscreen-mute/releases/latest">
+      <img src="https://img.shields.io/badge/Download-Latest%20release-0366d6?style=for-the-badge" alt="Download latest release">
+    </a>
+  </p>
+  <p>
     <a href="#getting-started"><strong>Get started »</strong></a>
     · <a href="https://github.com/Swmarly/windows-lockscreen-mute/issues/new">Report a bug</a>
     · <a href="https://github.com/Swmarly/windows-lockscreen-mute/issues/new">Request a feature</a>
@@ -43,7 +48,7 @@ Native C++17, Win32 session notifications, and Windows Core Audio. The utility r
 
 ### Installation
 
-Download the `windows-lockscreen-mute-x64` artifact from a successful [Windows build][build-url]. GitHub requires sign-in to download workflow artifacts. Extract the executable to a permanent folder and run it.
+Download `windows-lockscreen-mute.exe` from **Assets** on the [latest release][latest-release]. Save the executable to a permanent folder and run it.
 
 To build from source, open an **x64 Native Tools Command Prompt for VS 2022** and run these commands from the checkout.
 
@@ -81,6 +86,10 @@ Report bugs and feature requests through [GitHub Issues][issues-url].
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+### Publishing a release
+
+In GitHub, open **Actions → Publish Windows release → Run workflow**. Select `main` and enter a new tag such as `v1.0.0`. The workflow builds the x64 executable, publishes it under **Releases**, and marks it as the latest release.
+
 ## Acknowledgments
 
 - [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
@@ -92,3 +101,4 @@ Report bugs and feature requests through [GitHub Issues][issues-url].
 [build-url]: https://github.com/Swmarly/windows-lockscreen-mute/actions/workflows/build.yml
 [issues-badge]: https://img.shields.io/github/issues/Swmarly/windows-lockscreen-mute
 [issues-url]: https://github.com/Swmarly/windows-lockscreen-mute/issues
+[latest-release]: https://github.com/Swmarly/windows-lockscreen-mute/releases/latest

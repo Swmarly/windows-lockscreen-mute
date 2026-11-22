@@ -1,5 +1,4 @@
 #include <windows.h>
-#include <initguid.h>
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
 #include <shellapi.h>
@@ -81,7 +80,7 @@ bool currentSessionLocked() {
 
 ComPtr<IAudioEndpointVolume> endpointVolume(IMMDevice* device) {
     IAudioEndpointVolume* volume = nullptr;
-    if (FAILED(device->Activate(IID_IAudioEndpointVolume, CLSCTX_ALL, nullptr,
+    if (FAILED(device->Activate(__uuidof(IAudioEndpointVolume), CLSCTX_ALL, nullptr,
                                 reinterpret_cast<void**>(&volume)))) {
         return {};
     }
@@ -151,8 +150,8 @@ public:
 private:
     static ComPtr<IMMDeviceEnumerator> createEnumerator() {
         IMMDeviceEnumerator* instance = nullptr;
-        if (FAILED(CoCreateInstance(CLSID_MMDeviceEnumerator, nullptr, CLSCTX_ALL,
-                                    IID_IMMDeviceEnumerator, reinterpret_cast<void**>(&instance)))) {
+        if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                    IID_PPV_ARGS(&instance)))) {
             return {};
         }
         return ComPtr<IMMDeviceEnumerator>(instance);

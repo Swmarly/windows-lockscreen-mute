@@ -251,37 +251,6 @@ private:
         }
     }
 
-    UINT trackMenu(HMENU menu, POINT fallback) const {
-        NOTIFYICONIDENTIFIER identifier{};
-        identifier.cbSize = sizeof(identifier);
-        identifier.hWnd = window_;
-        identifier.uID = iconResource;
-
-        TPMPARAMS params{};
-        params.cbSize = sizeof(params);
-        RECT& icon = params.rcExclude;
-        if (FAILED(Shell_NotifyIconGetRect(&identifier, &icon))) {
-            icon = {fallback.x, fallback.y, fallback.x + 1, fallback.y + 1};
-        }
-
-        UINT flags = TPM_RETURNCMD | TPM_RIGHTBUTTON | TPM_VERTICAL;
-        POINT anchor{icon.left, icon.bottom};
-        MONITORINFO monitor{};
-        monitor.cbSize = sizeof(monitor);
-        if (GetMonitorInfoW(MonitorFromRect(&icon, MONITOR_DEFAULTTONEAREST), &monitor)) {
-            const RECT& work = monitor.rcWork;
-            if (work.right - icon.right < icon.left - work.left) {
-                anchor.x = icon.right;
-                flags |= TPM_RIGHTALIGN;
-            }
-            if (work.bottom - icon.bottom < icon.top - work.top) {
-                anchor.y = icon.top;
-                flags |= TPM_BOTTOMALIGN;
-            }
-        }
-        return TrackPopupMenuEx(menu, flags, anchor.x, anchor.y, window_, &params);
-    }
-
     int menuPixels(int pixels) const {
         return MulDiv(pixels, static_cast<int>(menuDpi_), 96);
     }
@@ -381,7 +350,8 @@ private:
 
         menuOpen_ = true;
         SetForegroundWindow(window_);
-        const UINT command = trackMenu(menu, position);
+        const UINT command = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                            position.x, position.y, 0, window_, nullptr);
         menuOpen_ = false;
         PostMessageW(window_, WM_NULL, 0, 0);
         DestroyMenu(menu);
@@ -441,14 +411,15 @@ private:
         }
         case trayMessage: {
             const auto event = LOWORD(lParam);
-            if (trayVersion4_) {
-                if (event == WM_CONTEXTMENU || event == NIN_SELECT || event == NIN_KEYSELECT) {
-                    showMenu({static_cast<short>(LOWORD(wParam)), static_cast<short>(HIWORD(wParam))});
-                }
-            } else if (event == WM_RBUTTONUP || event == WM_LBUTTONUP) {
+            if (trayVersion4_ && (event == NIN_SELECT || event == NIN_KEYSELECT)) {
+                showMenu({static_cast<short>(LOWORD(wParam)), static_cast<short>(HIWORD(wParam))});
+            } else if (event == WM_CONTEXTMENU ||
+                       (!trayVersion4_ && (event == WM_RBUTTONUP || event == WM_LBUTTONUP))) {
+                // The tray callback does not define wParam coordinates for WM_CONTEXTMENU.
                 POINT position{};
-                GetCursorPos(&position);
-                showMenu(position);
+                if (GetCursorPos(&position)) {
+                    showMenu(position);
+                }
             }
             return 0;
         }

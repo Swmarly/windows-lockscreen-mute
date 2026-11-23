@@ -86,10 +86,6 @@ Report bugs and feature requests through [GitHub Issues][issues-url].
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Publishing a release
-
-In GitHub, open **Actions → Publish Windows release → Run workflow**. Select `main` and enter a new tag such as `v1.0.0`. The workflow builds the x64 executable, publishes it under **Releases**, and marks it as the latest release.
-
 ## Acknowledgments
 
 - [Best-README-Template](https://github.com/othneildrew/Best-README-Template)
